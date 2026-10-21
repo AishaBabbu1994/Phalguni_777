@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>CSV - Win93</title>
+<style>
+  body { background: #008080; font-family: 'Courier New', monospace; margin: 0; padding: 10px; overflow-x: hidden; }
+  canvas { position: fixed; top: 0; left: 0; z-index: -1; image-rendering: pixelated; }
+  .win93 { background: #c0c0c0; border-top: 2px solid #fff; border-left: 2px solid #fff; border-right: 2px solid #000; border-bottom: 2px solid #000; padding: 2px; margin-bottom: 10px; }
+  .title-bar { background: #000080; color: white; padding: 2px 4px; font-weight: bold; font-size: 14px; margin-bottom: 4px; }
+  .content { padding: 6px; }
+  button, input[type=file], input[type=text] { background: #c0c0c0; border-top: 2px solid #fff; border-left: 2px solid #fff; border-right: 2px solid #000; border-bottom: 2px solid #000; font-family: 'Courier New', monospace; padding: 4px 8px; margin: 4px 0; font-size: 14px; width: 100%; box-sizing: border-box; }
+  button:active { border-top: 2px solid #000; border-left: 2px solid #000; border-right: 2px solid #fff; border-bottom: 2px solid #fff; }
+  .img-row { display: flex; gap: 8px; margin: 8px 0; }
+  .image-box { width: 80px; height: 80px; flex-shrink: 0; background: white; border-top: 2px solid #808080; border-left: 2px solid #808080; border-right: 2px solid #fff; border-bottom: 2px solid #fff; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+  .image-box img { width: 100%; height: 100%; object-fit: cover; display: none; }
+  .image-box.has-image img { display: block; }
+  .image-box input { position: absolute; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+  .image-box span { font-size: 10px; text-align: center; color: #000; }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; background: white; min-width: 300px; }
+  th, td { border: 1px solid #808080; padding: 4px; font-size: 14px; text-align: left; }
+  th { background: #c0c0c0; font-weight: bold; }
+  .row-num { background: #c0c0c0; font-weight: bold; text-align: center; width: 40px; user-select: none; }
+  td[contenteditable=true]:focus { outline: 1px dotted #000; background: #ffffcc; }
+  .d-col { background: #ffffcc; font-weight: bold; }
+  .selected { background: #000080 !important; color: white !important; }
+  .hidden { display: none !important; }
+  .range-info { font-size: 12px; color: #000; margin-top: 4px; }
+  .bulk-row { display: flex; gap: 4px; }
+  .bulk-row button { width: auto; flex: 1; }
+</style>
+</head>
+<body>
+
+<canvas id="bg"></canvas>
+
+<div class="win93">
+  <div class="title-bar"> Abrir CSV</div>
+  <div class="content">
+    <input type="file" id="file" accept=".csv">
+    <button id="toggleB">👁 Ocultar columna B</button>
+  </div>
+</div>
+
+<div class="win93">
+  <div class="title-bar">🖼️ Imágenes</div>
+  <div class="content">
+    <div class="img-row">
+      <div class="image-box" id="box1"><input type="file" accept="image/*" onchange="loadImage(this, 'img1')"><span>IMG 1</span><img id="img1"></div>
+      <div class="image-box" id="box2"><input type="file" accept="image/*" onchange="loadImage(this, 'img2')"><span>IMG 2</span><img id="img2"></div>
+    </div>
+  </div>
+</div>
+
+<div class="win93">
+  <div class="title-bar">🔢 Seleccionar Rango</div>
+  <div class="content">
+    <input type="text" id="rangeInput" placeholder="Ej: C1:D5;A1;B3:B7">
+    <button id="applyRange">Aplicar selección</button>
+    <div class="range-info" id="rangeInfo">: = rango | ; = separar celdas</div>
+    
+    <div id="bulkPanel" class="hidden" style="margin-top: 8px; border-top: 1px solid #808080; padding-top: 6px;">
+      <div class="bulk-row">
+        <input type="text" id="bulkInput" placeholder="Texto a escribir...">
+        <button id="btnWrite">✏️ Escribir</button>
+        <button id="btnClear">️ Borrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="win93">
+  <div class="title-bar">📊 Datos</div>
+  <div class="content table-wrap">
+    <table id="tabla">
+      <thead><tr><th></th><th>A</th><th id="thB">B</th><th>C</th><th>D</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('bg');
+const ctx = canvas.getContext('2d');
+let w, h;
+function resize() { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize); resize();
+
+const chars = ['अ','आ','इ','ई','उ','ऊ','ए','ऐ','ओ','औ'];
+const p = [];
+for(let i=0; i<12; i++) {
+  p.push({ x: Math.random()*w, y: Math.random()*h, vx: (Math.random()-0.5)*0.3, vy: (Math.random()-0.5)*0.3, c: chars[Math.floor(Math.random()*chars.length)], s: 16+Math.random()*12 });
+}
+function drawBg() {
+  ctx.fillStyle = '#008080'; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#000';
+  p.forEach(x => {
+    x.x += x.vx; x.y += x.vy;
+    if(x.x<0) x.x=w; if(x.x>w) x.x=0; if(x.y<0) x.y=h; if(x.y>h) x.y=0;
+    ctx.font = x.s+'px monospace'; ctx.fillText(x.c, x.x, x.y);
+  });
+  requestAnimationFrame(drawBg);
+}
+drawBg();
+
+function loadImage(input, imgId) {
+  if (input.files && input.files[0]) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = document.getElementById(imgId);
+      img.src = e.target.result;
+      img.parentElement.classList.add('has-image');
+    };
+    reader.readAsDataURL(input.files[0]);
+  }
+}
+
+let hideB = false;
+document.getElementById('toggleB').addEventListener('click', () => {
+  hideB = !hideB;
+  document.getElementById('thB').classList.toggle('hidden', hideB);
+  document.querySelectorAll('.colB').forEach(el => el.classList.toggle('hidden', hideB));
+  document.getElementById('toggleB').textContent = hideB ? '👁 Mostrar B' : '👁 Ocultar B';
+});
+
+document.getElementById('file').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const lines = ev.target.result.split(/\r?\n/);
+    const tbody = document.querySelector('#tabla tbody'); tbody.innerHTML = '';
+    lines.forEach((line, idx) => {
+      if (!line.trim()) return;
+      const cols = line.split(/[,;]/).map(c => c.trim().replace(/^"|"$/g,''));
+      const a = cols[0]||'', b = cols[1]||'', c = cols[2]||'';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td class="row-num">${idx + 1}</td><td contenteditable="true">${a}</td><td contenteditable="true" class="colB ${hideB?'hidden':''}">${b}</td><td contenteditable="true">${c}</td><td contenteditable="true" class="d-col">${c === '$' ? b : ''}</td>`;
+      tbody.appendChild(tr);
+    });
+  };
+  reader.readAsText(file);
+});
+
+function recalcRow(tr) {
+  const cells = tr.children;
+  if(cells.length >= 5) {
+    cells[4].textContent = (cells[3].textContent.trim() === '$') ? cells[2].textContent : '';
+  }
+}
+
+document.getElementById('tabla').addEventListener('input', e => {
+  if (e.target.tagName === 'TD' && !e.target.classList.contains('row-num')) recalcRow(e.target.parentElement);
+});
+
+document.getElementById('tabla').addEventListener('keydown', e => {
+  if (e.target.tagName !== 'TD') return;
+  const tr = e.target.parentElement;
+  const cells = Array.from(tr.children);
+  const ci = cells.indexOf(e.target);
+  const rows = Array.from(document.querySelector('#tabla tbody').children);
+  const ri = rows.indexOf(tr);
+  let next = null;
+
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (ri < rows.length - 1) next = rows[ri + 1].children[ci]; }
+  else if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); if (ri > 0) next = rows[ri - 1].children[ci]; }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); if (ci < cells.length - 1) next = cells[ci + 1]; }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); if (ci > 0) next = cells[ci - 1]; }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); if (ri < rows.length - 1) next = rows[ri + 1].children[ci]; }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); if (ri > 0) next = rows[ri - 1].children[ci]; }
+
+  if (next) {
+    next.focus();
+    const range = document.createRange(); const sel = window.getSelection();
+    range.selectNodeContents(next); range.collapse(false);
+    sel.removeAllRanges(); sel.addRange(range);
+  }
+});
+
+const colMap = { 'A': 1, 'B': 2, 'C': 3, 'D': 4 };
+function parseCell(cellStr) {
+  const match = cellStr.match(/([A-D])(\d+)/i);
+  if (!match) return null;
+  return { col: colMap[match[1].toUpperCase()], row: parseInt(match[2]) - 1 };
+}
+function parseRange(rangeStr) {
+  const parts = rangeStr.split(';');
+  const selections = [];
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    if (trimmed.includes(':')) {
+      const [start, end] = trimmed.split(':');
+      const startCell = parseCell(start);
+      const endCell = parseCell(end);
+      if (startCell && endCell) selections.push({ type: 'range', start: startCell, end: endCell });
+    } else {
+      const cell = parseCell(trimmed);
+      if (cell) selections.push({ type: 'cell', cell: cell });
+    }
+  }
+  return selections.length > 0 ? selections : null;
+}
+
+document.getElementById('applyRange').addEventListener('click', () => {
+  const rangeStr = document.getElementById('rangeInput').value.trim();
+  const selections = parseRange(rangeStr);
+  if (!selections) { document.getElementById('rangeInfo').textContent = '❌ Formato inválido'; return; }
+
+  const rows = document.querySelectorAll('#tabla tbody tr');
+  document.querySelectorAll('#tabla tbody td').forEach(c => c.classList.remove('selected'));
+  let count = 0;
+  
+  selections.forEach(sel => {
+    if (sel.type === 'cell') {
+      if (rows[sel.cell.row] && rows[sel.cell.row].children[sel.cell.col]) {
+        rows[sel.cell.row].children[sel.cell.col].classList.add('selected'); count++;
+      }
+    } else if (sel.type === 'range') {
+      for (let r = Math.min(sel.start.row, sel.end.row); r <= Math.max(sel.start.row, sel.end.row); r++) {
+        for (let c = Math.min(sel.start.col, sel.end.col); c <= Math.max(sel.start.col, sel.end.col); c++) {
+          if (rows[r] && rows[r].children[c]) { rows[r].children[c].classList.add('selected'); count++; }
+        }
+      }
+    }
+  });
+
+  document.getElementById('rangeInfo').textContent = `✅ ${count} celdas seleccionadas`;
+  document.getElementById('bulkPanel').classList.remove('hidden');
+});
+
+document.getElementById('btnWrite').addEventListener('click', () => {
+  const text = document.getElementById('bulkInput').value;
+  document.querySelectorAll('#tabla tbody td.selected').forEach(td => {
+    td.textContent = text;
+    recalcRow(td.parentElement);
+  });
+});
+
+document.getElementById('btnClear').addEventListener('click', () => {
+  document.querySelectorAll('#tabla tbody td.selected').forEach(td => {
+    td.textContent = '';
+    recalcRow(td.parentElement);
+  });
+});
+</script>
+</body>
+</html>
